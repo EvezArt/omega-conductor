@@ -1,24 +1,22 @@
-# EVEZ Omega-Conductor — Autonomous Developer Agent
+# EVEZ Omega Conductor — Orchestration Layer
 
-The central orchestration engine for the EVEZ ecosystem.
+Coordinates all EVEZ services, manages dependencies, and ensures the stack stays alive.
 
-## What it does
-- **Autoenveloper**: Autonomous developer agent — give it a task, it plans, codes, tests, deploys
-- **Omega-Conductor**: Routes tasks across the EVEZ ecosystem (evezstation, openclaw, agentnet, etc.)
+## What It Does
+- Service discovery and dependency resolution
+- Health check orchestration
+- Graceful shutdown sequencing
+- Auto-restart policies
 
-## API
-```
-POST /run           { task, model, max_steps }  → synchronous execution
-POST /run/async     { task }                    → background task, returns session_id
-GET  /status/:id    → task status + steps
-GET  /health        → system health
-```
+## Quick Start
 
-## Run locally
 ```bash
+git clone https://github.com/EvezArt/omega-conductor.git
+cd omega-conductor
 pip install -r requirements.txt
-uvicorn agent.api:app --reload
+python omega.py
 ```
 
-## Deploy
-Flies to Fly.io via GitHub Actions using evezstation's FLY_API_TOKEN cascade.
+---
+
+*Part of [EVEZ-OS](https://github.com/EvezArt/evez-os) • $6/mo • Zero API Cost*
