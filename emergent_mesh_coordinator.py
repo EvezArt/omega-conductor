@@ -11,9 +11,20 @@ Self-developmental loop:
   4. Platform wiring → close identified gaps
   5. LinkedIn broadcast → output signal
 """
-import os, sys, json, time, hashlib, requests
+import os, sys, json, time, hashlib, requests, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+
+def appdb(sql: str) -> dict:
+    """Execute SQL against the real SureThing AppDB via CLI."""
+    r = subprocess.run(
+        ["surething", "appdb", "exec-sql", sql],
+        capture_output=True, text=True
+    )
+    try:
+        return json.loads(r.stdout)
+    except Exception:
+        return {"success": False, "error": r.stderr or r.stdout}
 
 # ── CONFIGURATION ─────────────────────────────────────────────
 SUPABASE_URL = "https://vziaqxquzohqskesuxgz.supabase.co"
@@ -174,23 +185,16 @@ def _local_mesh_inference(prompt: str) -> str:
 # ── EIGENFORENSICS QUICK SCAN ─────────────────────────────────
 
 def quick_spectral_scan() -> dict:
-    """Fast spectral scan using cached metrics + live repo count."""
+    """Fast spectral scan using cached metrics + live repo count from AppDB."""
+    # Use AppDB swarm table as authoritative repo count (updated hourly by kiloclaw)
+    n_repos = 138  # Last known
     try:
-        resp = requests.get(
-            "https://api.github.com/users/EvezArt/repos?per_page=1",
-            headers={"Accept": "application/vnd.github.v3+json"}, timeout=5
-        )
-        # Get total from Link header
-        n_repos = 135  # Last known
-        if resp.status_code == 200:
-            link = resp.headers.get("Link", "")
-            if 'rel="last"' in link:
-                import re
-                m = re.search(r'page=(\d+)>; rel="last"', link)
-                if m:
-                    n_repos = int(m.group(1)) * 30  # GitHub default per_page=30
-    except:
-        n_repos = 135
+        r = appdb("SELECT COUNT(*) as c FROM mesh_revenue_signals")
+        c = r.get("data", {}).get("rows", [{}])[0].get("c", 0)
+        if c > 0:
+            n_repos = c
+    except Exception:
+        pass
 
     return {
         "n_repos": n_repos,
@@ -388,12 +392,11 @@ def run_mesh_cycle(cycle_num: int = 0) -> dict:
 
     # Phase 4: Log to AppDB (always works, no external auth)
     print("\nPhase 4: Logging to AppDB...")
-    import sqlite3
-    appdb_path = os.path.expanduser("~/.surething/appdb.sqlite") if os.path.exists(
-        os.path.expanduser("~/.surething/appdb.sqlite")) else "/tmp/evez_mesh.sqlite"
+    ai_analysis_esc = ai_plan.get("analysis", "").replace("'", "''")
+    actions_esc     = json.dumps(actions).replace("'", "''")
+    health_esc      = json.dumps(health).replace("'", "''")
 
-    conn = sqlite3.connect(appdb_path)
-    conn.execute("""
+    appdb("""
         CREATE TABLE IF NOT EXISTS mesh_cycles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts TEXT DEFAULT (datetime('now')),
@@ -407,14 +410,15 @@ def run_mesh_cycle(cycle_num: int = 0) -> dict:
             platform_health TEXT
         )
     """)
-    conn.execute(
-        "INSERT INTO mesh_cycles (cycle_id, phi, eta_star, n_repos, gap_score, ai_analysis, actions, platform_health) VALUES (?,?,?,?,?,?,?,?)",
-        (cycle_id, PHI, ETA_STAR, spectral["n_repos"], spectral["gap_score"],
-         ai_plan.get("analysis", ""), json.dumps(actions), json.dumps(health))
+    r = appdb(
+        f"INSERT INTO mesh_cycles (cycle_id, phi, eta_star, n_repos, gap_score, ai_analysis, actions, platform_health) "
+        f"VALUES ('{cycle_id}', {PHI}, {ETA_STAR}, {spectral['n_repos']}, {spectral['gap_score']}, "
+        f"'{ai_analysis_esc}', '{actions_esc}', '{health_esc}')"
     )
-    conn.commit()
-    conn.close()
-    print("  AppDB mesh_cycles logged ✓")
+    if r.get("success"):
+        print("  AppDB mesh_cycles logged ✓")
+    else:
+        print(f"  AppDB write error: {r.get('error','unknown')}", file=sys.stderr)
 
     # Phase 5: Supabase log (if key available)
     if SUPABASE_KEY:
